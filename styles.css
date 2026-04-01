@@ -565,6 +565,23 @@ h2 {
   font-size: 12px;
 }
 
+.graph-theme .easy-edge {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 3px;
+  stroke-linecap: round;
+}
+
+.graph-theme .easy-arrowhead {
+  fill: var(--edge);
+}
+
+.graph-theme .easy-edge-label {
+  fill: var(--label);
+  font-size: 12px;
+  font-family: "Inter", sans-serif;
+}
+
 .graph-theme .graph-title {
   fill: var(--title);
 }
