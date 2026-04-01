@@ -356,6 +356,11 @@ function validateGraph(graph) {
 }
 
 function renderGraph(currentState) {
+  if (currentState.mode === "easy") {
+    renderEasyGraph(currentState);
+    return;
+  }
+
   const svgSelection = d3.select(graphSvg);
   svgSelection.selectAll("*").remove();
 
@@ -421,6 +426,313 @@ function renderGraph(currentState) {
   nodeCountPill.textContent = `${currentState.graph.nodes.length} nodes`;
   edgeCountPill.textContent = `${currentState.graph.edges.length} edges`;
   themePill.textContent = theme.name;
+}
+
+function renderEasyGraph(currentState) {
+  const svgSelection = d3.select(graphSvg);
+  svgSelection.selectAll("*").remove();
+
+  const theme = getThemeById(currentState.theme);
+  const defs = svgSelection.append("defs");
+  defs
+    .append("marker")
+    .attr("id", "easy-arrowhead")
+    .attr("viewBox", "0 0 10 10")
+    .attr("refX", 9)
+    .attr("refY", 5)
+    .attr("markerWidth", 8)
+    .attr("markerHeight", 8)
+    .attr("orient", "auto-start-reverse")
+    .append("path")
+    .attr("d", "M 0 0 L 10 5 L 0 10 z")
+    .attr("class", "easy-arrowhead");
+
+  const inner = svgSelection.append("g").attr("class", `graph-theme ${theme.svgClass}`);
+  const edgesLayer = inner.append("g").attr("class", "easy-edges");
+  const nodesLayer = inner.append("g").attr("class", "easy-nodes");
+
+  const layout = buildEasyLayout(currentState.graph, currentState.direction, currentState.title);
+
+  currentState.graph.edges.forEach((edge) => {
+    const fromNode = layout.nodesById.get(edge.from);
+    const toNode = layout.nodesById.get(edge.to);
+    if (!fromNode || !toNode) {
+      return;
+    }
+
+    const path = buildEasyEdgePath(fromNode, toNode, currentState.direction);
+    edgesLayer
+      .append("path")
+      .attr("class", "easy-edge")
+      .attr("d", path)
+      .attr("marker-end", "url(#easy-arrowhead)");
+
+    if (edge.label) {
+      const midpoint = getEasyEdgeMidpoint(fromNode, toNode);
+      edgesLayer
+        .append("text")
+        .attr("class", "easy-edge-label")
+        .attr("x", midpoint.x)
+        .attr("y", midpoint.y - 10)
+        .attr("text-anchor", "middle")
+        .text(edge.label);
+    }
+  });
+
+  const nodeGroups = nodesLayer
+    .selectAll("g.easy-node")
+    .data(layout.nodes)
+    .enter()
+    .append("g")
+    .attr("class", "graph-node easy-node")
+    .attr("transform", (node) => `translate(${node.position.x},${node.position.y})`);
+
+  nodeGroups
+    .append("rect")
+    .attr("x", (node) => -node.width / 2)
+    .attr("y", (node) => -node.height / 2)
+    .attr("width", (node) => node.width)
+    .attr("height", (node) => node.height);
+
+  nodeGroups
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("dominant-baseline", "middle")
+    .text((node) => node.label);
+
+  enableEasyNodeDragging(nodeGroups, edgesLayer, currentState);
+
+  if (currentState.title) {
+    inner
+      .append("text")
+      .attr("class", "graph-title")
+      .attr("x", layout.width / 2)
+      .attr("y", 20)
+      .attr("text-anchor", "middle")
+      .text(currentState.title);
+  }
+
+  svgSelection.attr("width", layout.width);
+  svgSelection.attr("height", layout.height);
+  svgSelection.attr("viewBox", `0 0 ${layout.width} ${layout.height}`);
+
+  previewTitle.textContent = currentState.title;
+  nodeCountPill.textContent = `${currentState.graph.nodes.length} nodes`;
+  edgeCountPill.textContent = `${currentState.graph.edges.length} edges`;
+  themePill.textContent = theme.name;
+}
+
+function buildEasyLayout(graphData, direction, hasTitle) {
+  const nodeWidth = 180;
+  const nodeHeight = 88;
+  const padding = 56;
+  const titleSpace = hasTitle ? 90 : 32;
+  const columnGap = 220;
+  const rowGap = 130;
+  const nodes = graphData.nodes.map((node) => ({ ...node, width: nodeWidth, height: nodeHeight }));
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+
+  const incoming = new Map(nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(nodes.map((node) => [node.id, []]));
+
+  graphData.edges.forEach((edge) => {
+    incoming.set(edge.to, (incoming.get(edge.to) || 0) + 1);
+    outgoing.get(edge.from)?.push(edge.to);
+  });
+
+  const queue = nodes.filter((node) => incoming.get(node.id) === 0).map((node) => node.id);
+  const rankById = new Map(nodes.map((node) => [node.id, 0]));
+  const visited = new Set();
+
+  while (queue.length) {
+    const nodeId = queue.shift();
+    if (visited.has(nodeId)) {
+      continue;
+    }
+    visited.add(nodeId);
+
+    const nextNodes = outgoing.get(nodeId) || [];
+    nextNodes.forEach((nextId) => {
+      rankById.set(nextId, Math.max(rankById.get(nextId) || 0, (rankById.get(nodeId) || 0) + 1));
+      incoming.set(nextId, (incoming.get(nextId) || 0) - 1);
+      if ((incoming.get(nextId) || 0) <= 0) {
+        queue.push(nextId);
+      }
+    });
+  }
+
+  let fallbackRank = 0;
+  nodes.forEach((node) => {
+    if (!visited.has(node.id)) {
+      rankById.set(node.id, fallbackRank);
+      fallbackRank += 1;
+    }
+  });
+
+  const columns = new Map();
+  nodes.forEach((node) => {
+    const rank = rankById.get(node.id) || 0;
+    if (!columns.has(rank)) {
+      columns.set(rank, []);
+    }
+    columns.get(rank).push(node);
+  });
+
+  const sortedRanks = [...columns.keys()].sort((left, right) => left - right);
+  sortedRanks.forEach((rank) => {
+    columns.get(rank).sort((left, right) => left.label.localeCompare(right.label));
+  });
+
+  let maxRows = 1;
+  sortedRanks.forEach((rank) => {
+    maxRows = Math.max(maxRows, columns.get(rank).length);
+  });
+
+  const horizontal = direction === "LR" || direction === "RL";
+  const width = horizontal
+    ? Math.max(420, padding * 2 + sortedRanks.length * nodeWidth + Math.max(0, sortedRanks.length - 1) * (columnGap - nodeWidth))
+    : Math.max(420, padding * 2 + maxRows * nodeWidth + Math.max(0, maxRows - 1) * 40);
+  const height = horizontal
+    ? Math.max(280, titleSpace + padding + maxRows * nodeHeight + Math.max(0, maxRows - 1) * (rowGap - nodeHeight))
+    : Math.max(280, titleSpace + padding + sortedRanks.length * nodeHeight + Math.max(0, sortedRanks.length - 1) * (rowGap - nodeHeight));
+
+  sortedRanks.forEach((rank, rankIndex) => {
+    const columnNodes = columns.get(rank);
+    const orderedNodes = direction === "RL" || direction === "BT" ? [...columnNodes].reverse() : columnNodes;
+
+    orderedNodes.forEach((node, rowIndex) => {
+      if (node.position) {
+        return;
+      }
+
+      if (horizontal) {
+        const x = padding + nodeWidth / 2 + rankIndex * columnGap;
+        const columnHeight = orderedNodes.length * nodeHeight + Math.max(0, orderedNodes.length - 1) * (rowGap - nodeHeight);
+        const startY = titleSpace + Math.max(0, (Math.max(columnHeight, nodeHeight) - columnHeight) / 2) + nodeHeight / 2;
+        const y = startY + rowIndex * rowGap;
+        node.position = direction === "RL"
+          ? { x: width - x, y }
+          : { x, y };
+      } else {
+        const y = titleSpace + nodeHeight / 2 + rankIndex * rowGap;
+        const rowWidth = orderedNodes.length * nodeWidth + Math.max(0, orderedNodes.length - 1) * 40;
+        const startX = padding + Math.max(0, (Math.max(rowWidth, nodeWidth) - rowWidth) / 2) + nodeWidth / 2;
+        const x = startX + rowIndex * (nodeWidth + 40);
+        node.position = direction === "BT"
+          ? { x, y: height - y }
+          : { x, y };
+      }
+    });
+  });
+
+  return { nodes, nodesById, width, height };
+}
+
+function buildEasyEdgePath(fromNode, toNode, direction) {
+  const start = getEasyNodeAnchor(fromNode, toNode, direction, true);
+  const end = getEasyNodeAnchor(fromNode, toNode, direction, false);
+  const horizontal = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y);
+
+  if (horizontal) {
+    const curve = (end.x - start.x) * 0.35;
+    return `M ${start.x} ${start.y} C ${start.x + curve} ${start.y}, ${end.x - curve} ${end.y}, ${end.x} ${end.y}`;
+  }
+
+  const curve = (end.y - start.y) * 0.35;
+  return `M ${start.x} ${start.y} C ${start.x} ${start.y + curve}, ${end.x} ${end.y - curve}, ${end.x} ${end.y}`;
+}
+
+function getEasyEdgeMidpoint(fromNode, toNode) {
+  return {
+    x: (fromNode.position.x + toNode.position.x) / 2,
+    y: (fromNode.position.y + toNode.position.y) / 2
+  };
+}
+
+function getEasyNodeAnchor(fromNode, toNode, direction, isStart) {
+  const source = isStart ? fromNode : toNode;
+  const target = isStart ? toNode : fromNode;
+  const deltaX = target.position.x - source.position.x;
+  const deltaY = target.position.y - source.position.y;
+
+  if (Math.abs(deltaX) >= Math.abs(deltaY)) {
+    return {
+      x: source.position.x + (deltaX >= 0 ? source.width / 2 : -source.width / 2),
+      y: source.position.y
+    };
+  }
+
+  return {
+    x: source.position.x,
+    y: source.position.y + (deltaY >= 0 ? source.height / 2 : -source.height / 2)
+  };
+}
+
+function enableEasyNodeDragging(nodeGroups, edgesLayer, currentState) {
+  const nodesById = new Map(currentState.graph.nodes.map((node) => [node.id, node]));
+
+  nodeGroups.call(
+    d3.drag()
+      .on("start", function() {
+        d3.select(this).classed("is-dragging", true);
+      })
+      .on("drag", function(event, node) {
+        const actualNode = nodesById.get(node.id);
+        if (!actualNode) {
+          return;
+        }
+
+        actualNode.position = {
+          x: (actualNode.position?.x ?? node.position.x) + event.dx,
+          y: (actualNode.position?.y ?? node.position.y) + event.dy
+        };
+        node.position = { ...actualNode.position };
+        d3.select(this).attr("transform", `translate(${node.position.x},${node.position.y})`);
+        redrawEasyEdges(edgesLayer, currentState.graph);
+      })
+      .on("end", function() {
+        d3.select(this).classed("is-dragging", false);
+        persistGraphState();
+      })
+  );
+}
+
+function redrawEasyEdges(edgesLayer, graphData) {
+  const nodeLookup = new Map(graphData.nodes.map((node) => [
+    node.id,
+    {
+      ...node,
+      width: 180,
+      height: 88
+    }
+  ]));
+
+  edgesLayer.selectAll("path.easy-edge").each(function(edge, index) {
+    const graphEdge = graphData.edges[index];
+    if (!graphEdge) {
+      return;
+    }
+    const fromNode = nodeLookup.get(graphEdge.from);
+    const toNode = nodeLookup.get(graphEdge.to);
+    if (!fromNode || !toNode) {
+      return;
+    }
+    d3.select(this).attr("d", buildEasyEdgePath(fromNode, toNode));
+  });
+
+  edgesLayer.selectAll("text.easy-edge-label").each(function(edge, index) {
+    const graphEdge = graphData.edges.filter((item) => item.label)[index];
+    if (!graphEdge) {
+      return;
+    }
+    const fromNode = nodeLookup.get(graphEdge.from);
+    const toNode = nodeLookup.get(graphEdge.to);
+    if (!fromNode || !toNode) {
+      return;
+    }
+    const midpoint = getEasyEdgeMidpoint(fromNode, toNode);
+    d3.select(this).attr("x", midpoint.x).attr("y", midpoint.y - 10);
+  });
 }
 
 function getThemeById(themeId) {
