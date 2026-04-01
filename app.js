@@ -394,9 +394,11 @@ function renderGraph(currentState) {
   const renderer = new dagreD3.render();
   renderer(inner, graph);
 
-  applySavedManualPositions(inner, currentState.graph);
+  const hasManualLayout = applySavedManualPositions(inner, currentState.graph);
   enableNodeDragging(inner, currentState.graph);
-  updateManualEdges(inner, currentState.graph);
+  if (hasManualLayout) {
+    updateManualEdges(inner, currentState.graph);
+  }
   const titleOffset = currentState.title ? 18 : 0;
 
   if (currentState.title) {
@@ -432,15 +434,20 @@ function clearManualLayout() {
 }
 
 function applySavedManualPositions(inner, graphData) {
+  let hasManualLayout = false;
+
   inner.selectAll("g.node").each(function(nodeId) {
     const node = graphData.nodes.find((item) => item.id === nodeId);
     if (!node || !node.position) {
       return;
     }
 
+    hasManualLayout = true;
     const selection = d3.select(this);
     selection.attr("transform", `translate(${node.position.x},${node.position.y})`);
   });
+
+  return hasManualLayout;
 }
 
 function enableNodeDragging(inner, graphData) {
@@ -486,14 +493,18 @@ function updateManualEdges(inner, graphData) {
       return;
     }
 
+    const rectX = Number(rect.getAttribute("x") || 0);
+    const rectY = Number(rect.getAttribute("y") || 0);
     const width = Number(rect.getAttribute("width"));
     const height = Number(rect.getAttribute("height"));
 
     boxes.set(nodeId, {
-      x: transform.x,
-      y: transform.y,
+      x: transform.x + rectX,
+      y: transform.y + rectY,
       width,
-      height
+      height,
+      centerX: transform.x,
+      centerY: transform.y
     });
   });
 
@@ -518,20 +529,20 @@ function updateManualEdges(inner, graphData) {
       return;
     }
 
-    const midX = (fromBox.x + fromBox.width / 2 + toBox.x + toBox.width / 2) / 2;
-    const midY = (fromBox.y + fromBox.height / 2 + toBox.y + toBox.height / 2) / 2;
+    const midX = (fromBox.centerX + toBox.centerX) / 2;
+    const midY = (fromBox.centerY + toBox.centerY) / 2;
     d3.select(this).attr("transform", `translate(${midX},${midY})`);
   });
 }
 
 function computeEdgePoints(fromBox, toBox) {
   const fromCenter = {
-    x: fromBox.x + fromBox.width / 2,
-    y: fromBox.y + fromBox.height / 2
+    x: fromBox.centerX,
+    y: fromBox.centerY
   };
   const toCenter = {
-    x: toBox.x + toBox.width / 2,
-    y: toBox.y + toBox.height / 2
+    x: toBox.centerX,
+    y: toBox.centerY
   };
   const deltaX = toCenter.x - fromCenter.x;
   const deltaY = toCenter.y - fromCenter.y;
@@ -752,6 +763,7 @@ function handleAddNode() {
 
   const id = makeUniqueId(name, state.graph.nodes.map((node) => node.id));
   state.graph.nodes.push({ id, label: name });
+  clearManualLayout();
   nodeNameInput.value = "";
   syncStateToControls();
   renderGraphFromControls({ updateUrl: true, announce: `Added box ${name}.` });
@@ -778,6 +790,7 @@ function handleAddEdge() {
     edge.label = label;
   }
   state.graph.edges.push(edge);
+  clearManualLayout();
   edgeLabelInput.value = "";
   syncStateToControls();
   renderGraphFromControls({ updateUrl: true, announce: "Connection added." });
@@ -798,6 +811,7 @@ function renameNode(nodeId) {
   if (!node.label) {
     node.label = node.id;
   }
+  clearManualLayout();
   syncStateToControls();
   renderGraphFromControls({ updateUrl: true, announce: "Node renamed." });
 }
@@ -815,12 +829,14 @@ function deleteNode(nodeId) {
 
   state.graph.nodes = state.graph.nodes.filter((item) => item.id !== nodeId);
   state.graph.edges = state.graph.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
+  clearManualLayout();
   syncStateToControls();
   renderGraphFromControls({ updateUrl: true, announce: "Node deleted." });
 }
 
 function deleteEdge(index) {
   state.graph.edges.splice(index, 1);
+  clearManualLayout();
   syncStateToControls();
   renderGraphFromControls({ updateUrl: true, announce: "Connection deleted." });
 }
@@ -834,6 +850,7 @@ function applyStarterTemplate(templateId) {
   };
 
   state.graph = structuredClone(templates[templateId] || templates.blank);
+  clearManualLayout();
   syncStateToControls();
   renderGraphFromControls({ updateUrl: true, announce: "Starter layout applied." });
 }
