@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Static Graph Creator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre-d3@0.6.4/dist/dagre-d3.min.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div>
+        <p class="eyebrow">Static + Shareable</p>
+        <h1>Graph Creator</h1>
+        <p class="lede">Build architecture diagrams that live fully in the URL so anyone with the link sees the same graph.</p>
+      </div>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Graph Data</h2>
+          <button id="formatJsonButton" class="ghost-button" type="button">Format JSON</button>
+        </div>
+        <p class="panel-copy">Edit the graph model directly. Each node needs an <code>id</code>. Edges connect <code>from</code> to <code>to</code>.</p>
+        <textarea id="graphInput" spellcheck="false" aria-label="Graph JSON"></textarea>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Layout</h2>
+        </div>
+        <div class="field-grid">
+          <label class="field">
+            <span>Direction</span>
+            <select id="directionSelect">
+              <option value="LR">Left to Right</option>
+              <option value="TB">Top to Bottom</option>
+              <option value="RL">Right to Left</option>
+              <option value="BT">Bottom to Top</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Title</span>
+            <input id="titleInput" type="text" maxlength="120" placeholder="Optional graph title">
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Styles</h2>
+        </div>
+        <p class="panel-copy">Choose a visual theme. Cards show quick previews before applying.</p>
+        <div id="themePicker" class="theme-grid" role="listbox" aria-label="Graph styles"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Share & Export</h2>
+        </div>
+        <div class="button-row">
+          <button id="updateUrlButton" type="button">Update URL</button>
+          <button id="copyLinkButton" type="button">Copy Share Link</button>
+        </div>
+        <div class="button-row">
+          <button id="exportJsonButton" type="button">Export JSON</button>
+          <button id="exportSvgButton" type="button">Export SVG</button>
+          <button id="exportPngButton" type="button">Export PNG</button>
+        </div>
+        <div class="button-row">
+          <button id="resetButton" class="ghost-button" type="button">Reset Example</button>
+        </div>
+        <p id="statusMessage" class="status-message" aria-live="polite"></p>
+      </section>
+    </aside>
+
+    <main class="canvas-panel">
+      <div class="canvas-toolbar">
+        <div>
+          <p class="eyebrow">Preview</p>
+          <h2 id="previewTitle">Architecture Graph</h2>
+        </div>
+        <div class="meta-pills">
+          <span id="nodeCountPill" class="pill">0 nodes</span>
+          <span id="edgeCountPill" class="pill">0 edges</span>
+          <span id="themePill" class="pill">Theme</span>
+        </div>
+      </div>
+      <section id="graphStage" class="graph-stage">
+        <svg id="graphSvg" xmlns="http://www.w3.org/2000/svg" aria-label="Graph preview"></svg>
+      </section>
+    </main>
+  </div>
+
+  <template id="themeCardTemplate">
+    <button class="theme-card" type="button">
+      <span class="theme-preview" aria-hidden="true">
+        <span class="mini-node"></span>
+        <span class="mini-edge edge-a"></span>
+        <span class="mini-node right"></span>
+        <span class="mini-edge edge-b"></span>
+        <span class="mini-node bottom"></span>
+      </span>
+      <span class="theme-name"></span>
+      <span class="theme-description"></span>
+    </button>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
