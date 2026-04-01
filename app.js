@@ -82,9 +82,10 @@ const expertModeButton = document.getElementById("expertModeButton");
 const modeHelpText = document.getElementById("modeHelpText");
 const easyEditorPanel = document.getElementById("easyEditorPanel");
 const expertEditorPanel = document.getElementById("expertEditorPanel");
-const patternTypeSelect = document.getElementById("patternTypeSelect");
-const patternCenterInput = document.getElementById("patternCenterInput");
-const patternInput = document.getElementById("patternInput");
+const templateBlankButton = document.getElementById("templateBlankButton");
+const templateChainButton = document.getElementById("templateChainButton");
+const templateHubButton = document.getElementById("templateHubButton");
+const templateLayersButton = document.getElementById("templateLayersButton");
 const nodeNameInput = document.getElementById("nodeNameInput");
 const addNodeButton = document.getElementById("addNodeButton");
 const edgeFromSelect = document.getElementById("edgeFromSelect");
@@ -202,7 +203,10 @@ function initialize() {
     renderGraphFromControls({ updateUrl: true, announce: "Expert mode enabled." });
   });
 
-  document.getElementById("applyPatternButton").addEventListener("click", applyPatternBuilder);
+  templateBlankButton.addEventListener("click", () => applyStarterTemplate("blank"));
+  templateChainButton.addEventListener("click", () => applyStarterTemplate("chain"));
+  templateHubButton.addEventListener("click", () => applyStarterTemplate("hub"));
+  templateLayersButton.addEventListener("click", () => applyStarterTemplate("layers"));
   addNodeButton.addEventListener("click", handleAddNode);
   addEdgeButton.addEventListener("click", handleAddEdge);
   nodeNameInput.addEventListener("keydown", (event) => {
@@ -610,8 +614,8 @@ function updateModeUi() {
 
 function syncEasyEditorFromGraph() {
   const graph = state.graph;
-  easyNodeCount.textContent = String(graph.nodes.length);
-  easyEdgeCount.textContent = String(graph.edges.length);
+  easyNodeCount.textContent = `${graph.nodes.length} boxes`;
+  easyEdgeCount.textContent = `${graph.edges.length} connections`;
   renderNodeList(graph.nodes);
   renderEdgeList(graph.edges, graph.nodes);
   populateNodeSelects(graph.nodes);
@@ -621,7 +625,7 @@ function renderNodeList(nodes) {
   easyNodeList.innerHTML = "";
 
   if (!nodes.length) {
-    easyNodeList.innerHTML = '<div class="empty-state">No nodes yet. Add a node or generate one from a pattern.</div>';
+    easyNodeList.innerHTML = '<div class="empty-state">No boxes yet. Start with a template or add your first box above.</div>';
     return;
   }
 
@@ -667,7 +671,7 @@ function renderEdgeList(edges, nodes) {
   easyEdgeList.innerHTML = "";
 
   if (!edges.length) {
-    easyEdgeList.innerHTML = '<div class="empty-state">No connections yet. Use the connection form to link nodes.</div>';
+    easyEdgeList.innerHTML = '<div class="empty-state">No connections yet. Pick two boxes above and press Connect.</div>';
     return;
   }
 
@@ -742,7 +746,7 @@ function populateNodeSelects(nodes) {
 function handleAddNode() {
   const name = nodeNameInput.value.trim();
   if (!name) {
-    showStatus("Enter a node name first.", "error");
+    showStatus("Type a box name first.", "error");
     return;
   }
 
@@ -750,7 +754,7 @@ function handleAddNode() {
   state.graph.nodes.push({ id, label: name });
   nodeNameInput.value = "";
   syncStateToControls();
-  renderGraphFromControls({ updateUrl: true, announce: `Added node ${name}.` });
+  renderGraphFromControls({ updateUrl: true, announce: `Added box ${name}.` });
 }
 
 function handleAddEdge() {
@@ -821,32 +825,17 @@ function deleteEdge(index) {
   renderGraphFromControls({ updateUrl: true, announce: "Connection deleted." });
 }
 
-function applyPatternBuilder() {
-  const raw = patternInput.value.trim();
-  const patternType = patternTypeSelect.value;
+function applyStarterTemplate(templateId) {
+  const templates = {
+    blank: { nodes: [], edges: [] },
+    chain: buildChainGraph("Step 1\nStep 2\nStep 3"),
+    hub: buildHubGraph("Main Service", "Client App\nAuth\nData Store\nWorker"),
+    layers: buildLayerGraph("Browser\nAPI\nServices\nStorage")
+  };
 
-  if (!raw) {
-    showStatus("Add some names first for the pattern builder.", "error");
-    return;
-  }
-
-  let graph;
-  try {
-    if (patternType === "chain") {
-      graph = buildChainGraph(raw);
-    } else if (patternType === "hub") {
-      graph = buildHubGraph(patternCenterInput.value.trim(), raw);
-    } else {
-      graph = buildLayerGraph(raw);
-    }
-  } catch (error) {
-    showStatus(error.message, "error");
-    return;
-  }
-
-  state.graph = graph;
+  state.graph = structuredClone(templates[templateId] || templates.blank);
   syncStateToControls();
-  renderGraphFromControls({ updateUrl: true, announce: "Pattern applied." });
+  renderGraphFromControls({ updateUrl: true, announce: "Starter layout applied." });
 }
 
 function buildChainGraph(raw) {
