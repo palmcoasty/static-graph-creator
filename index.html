@@ -45,6 +45,8 @@
             <button id="templateChainButton" class="quick-template-button muted-button" type="button">Simple Flow</button>
             <button id="templateHubButton" class="quick-template-button muted-button" type="button">Hub and Spoke</button>
             <button id="templateLayersButton" class="quick-template-button muted-button" type="button">Layers</button>
+            <button id="templateCycleButton" class="quick-template-button muted-button" type="button">Cycle</button>
+            <button id="templatePipelineButton" class="quick-template-button muted-button" type="button">Pipeline</button>
           </div>
         </div>
 
@@ -122,6 +124,9 @@
             <input id="titleInput" type="text" maxlength="120" placeholder="Optional graph title">
           </label>
         </div>
+        <div class="button-row">
+          <button id="reverseDirectionButton" class="ghost-button" type="button">Reverse Sides</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -137,6 +142,10 @@
           <h2>Share & Export</h2>
         </div>
         <p class="panel-copy">Drag nodes in the preview to create a custom layout. The exact positions are saved in the share link.</p>
+        <label class="field">
+          <span>Share Link</span>
+          <input id="shareLinkInput" type="text" spellcheck="false" placeholder="Shareable URL appears here">
+        </label>
         <div class="button-row">
           <button id="updateUrlButton" type="button">Update URL</button>
           <button id="copyLinkButton" type="button">Copy Share Link</button>

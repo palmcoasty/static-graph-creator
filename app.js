@@ -26,6 +26,20 @@ const THEME_DEFINITIONS = [
     description: "Light printable documentation style",
     svgClass: "theme-paper",
     previewClass: "preview-paper"
+  },
+  {
+    id: "forest",
+    name: "Forest",
+    description: "Green operations dashboard style",
+    svgClass: "theme-forest",
+    previewClass: "preview-forest"
+  },
+  {
+    id: "royal",
+    name: "Royal",
+    description: "Purple presentation background",
+    svgClass: "theme-royal",
+    previewClass: "preview-royal"
   }
 ];
 
@@ -86,6 +100,8 @@ const templateBlankButton = document.getElementById("templateBlankButton");
 const templateChainButton = document.getElementById("templateChainButton");
 const templateHubButton = document.getElementById("templateHubButton");
 const templateLayersButton = document.getElementById("templateLayersButton");
+const templateCycleButton = document.getElementById("templateCycleButton");
+const templatePipelineButton = document.getElementById("templatePipelineButton");
 const nodeNameInput = document.getElementById("nodeNameInput");
 const addNodeButton = document.getElementById("addNodeButton");
 const edgeFromSelect = document.getElementById("edgeFromSelect");
@@ -103,6 +119,9 @@ const edgeCountPill = document.getElementById("edgeCountPill");
 const statusMessage = document.getElementById("statusMessage");
 const graphSvg = document.getElementById("graphSvg");
 const resetLayoutButton = document.getElementById("resetLayoutButton");
+const reverseDirectionButton = document.getElementById("reverseDirectionButton");
+const shareLinkInput = document.getElementById("shareLinkInput");
+const graphStage = document.getElementById("graphStage");
 
 initialize();
 
@@ -207,8 +226,11 @@ function initialize() {
   templateChainButton.addEventListener("click", () => applyStarterTemplate("chain"));
   templateHubButton.addEventListener("click", () => applyStarterTemplate("hub"));
   templateLayersButton.addEventListener("click", () => applyStarterTemplate("layers"));
+  templateCycleButton.addEventListener("click", () => applyStarterTemplate("cycle"));
+  templatePipelineButton.addEventListener("click", () => applyStarterTemplate("pipeline"));
   addNodeButton.addEventListener("click", handleAddNode);
   addEdgeButton.addEventListener("click", handleAddEdge);
+  reverseDirectionButton.addEventListener("click", handleReverseDirection);
   nodeNameInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -219,6 +241,13 @@ function initialize() {
   graphInput.addEventListener("input", debounce(() => renderGraphFromControls({ updateUrl: true }), 350));
   directionSelect.addEventListener("change", () => renderGraphFromControls({ updateUrl: true }));
   titleInput.addEventListener("input", debounce(() => renderGraphFromControls({ updateUrl: true }), 250));
+  shareLinkInput.addEventListener("change", handleShareLinkEdit);
+  shareLinkInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleShareLinkEdit();
+    }
+  });
 
   window.addEventListener("hashchange", () => {
     const incomingState = loadStateFromUrl();
@@ -259,6 +288,7 @@ function syncStateToControls() {
   graphInput.value = JSON.stringify(state.graph, null, 2);
   directionSelect.value = state.direction;
   titleInput.value = state.title;
+  shareLinkInput.value = window.location.href;
   updateThemePickerSelection();
   updateModeUi();
   syncEasyEditorFromGraph();
@@ -356,6 +386,7 @@ function validateGraph(graph) {
 }
 
 function renderGraph(currentState) {
+  graphStage.className = `graph-stage ${getThemeById(currentState.theme).svgClass}`;
   if (currentState.mode === "easy") {
     renderEasyGraph(currentState);
     return;
@@ -438,10 +469,10 @@ function renderEasyGraph(currentState) {
     .append("marker")
     .attr("id", "easy-arrowhead")
     .attr("viewBox", "0 0 10 10")
-    .attr("refX", 9)
+    .attr("refX", 8)
     .attr("refY", 5)
-    .attr("markerWidth", 8)
-    .attr("markerHeight", 8)
+    .attr("markerWidth", 10)
+    .attr("markerHeight", 10)
     .attr("orient", "auto-start-reverse")
     .append("path")
     .attr("d", "M 0 0 L 10 5 L 0 10 z")
@@ -654,17 +685,18 @@ function getEasyNodeAnchor(fromNode, toNode, direction, isStart) {
   const target = isStart ? toNode : fromNode;
   const deltaX = target.position.x - source.position.x;
   const deltaY = target.position.y - source.position.y;
+  const gap = 14;
 
   if (Math.abs(deltaX) >= Math.abs(deltaY)) {
     return {
-      x: source.position.x + (deltaX >= 0 ? source.width / 2 : -source.width / 2),
+      x: source.position.x + (deltaX >= 0 ? source.width / 2 + gap : -(source.width / 2 + gap)),
       y: source.position.y
     };
   }
 
   return {
     x: source.position.x,
-    y: source.position.y + (deltaY >= 0 ? source.height / 2 : -source.height / 2)
+    y: source.position.y + (deltaY >= 0 ? source.height / 2 + gap : -(source.height / 2 + gap))
   };
 }
 
@@ -733,6 +765,43 @@ function redrawEasyEdges(edgesLayer, graphData) {
     const midpoint = getEasyEdgeMidpoint(fromNode, toNode);
     d3.select(this).attr("x", midpoint.x).attr("y", midpoint.y - 10);
   });
+}
+
+function handleReverseDirection() {
+  const reverseMap = {
+    LR: "RL",
+    RL: "LR",
+    TB: "BT",
+    BT: "TB"
+  };
+
+  state.direction = reverseMap[state.direction] || "RL";
+  directionSelect.value = state.direction;
+  clearManualLayout();
+  renderGraphFromControls({ updateUrl: true, announce: "Graph direction reversed." });
+}
+
+function handleShareLinkEdit() {
+  const raw = shareLinkInput.value.trim();
+  if (!raw) {
+    showStatus("Paste a full share link or a URL hash.", "error");
+    shareLinkInput.value = window.location.href;
+    return;
+  }
+
+  const hashIndex = raw.indexOf("#");
+  const nextHash = hashIndex >= 0 ? raw.slice(hashIndex) : raw.startsWith("#") ? raw : `#${raw}`;
+
+  try {
+    const parsed = decodeStateFromHash(nextHash);
+    Object.assign(state, parsed);
+    history.replaceState(null, "", nextHash);
+    syncStateToControls();
+    renderGraphFromControls({ updateUrl: false, announce: "Loaded graph from edited share link." });
+  } catch (error) {
+    showStatus(`Invalid share link: ${error.message}`, "error");
+    shareLinkInput.value = window.location.href;
+  }
 }
 
 function getThemeById(themeId) {
@@ -1155,13 +1224,18 @@ function deleteEdge(index) {
 
 function applyStarterTemplate(templateId) {
   const templates = {
-    blank: { nodes: [], edges: [] },
-    chain: buildChainGraph("Step 1\nStep 2\nStep 3"),
-    hub: buildHubGraph("Main Service", "Client App\nAuth\nData Store\nWorker"),
-    layers: buildLayerGraph("Browser\nAPI\nServices\nStorage")
+    blank: { title: "Untitled Graph", theme: "midnight", graph: { nodes: [], edges: [] } },
+    chain: { title: "Simple Flow", theme: "midnight", graph: buildChainGraph("Step 1\nStep 2\nStep 3") },
+    hub: { title: "Hub and Spoke", theme: "royal", graph: buildHubGraph("Main Service", "Client App\nAuth\nData Store\nWorker") },
+    layers: { title: "Layered Architecture", theme: "paper", graph: buildLayerGraph("Browser\nAPI\nServices\nStorage") },
+    cycle: { title: "Feedback Loop", theme: "forest", graph: buildCycleGraph("Discover\nBuild\nMeasure\nImprove") },
+    pipeline: { title: "Delivery Pipeline", theme: "sunset", graph: buildPipelineGraph() }
   };
 
-  state.graph = structuredClone(templates[templateId] || templates.blank);
+  const template = structuredClone(templates[templateId] || templates.blank);
+  state.graph = template.graph;
+  state.title = template.title;
+  state.theme = template.theme;
   clearManualLayout();
   syncStateToControls();
   renderGraphFromControls({ updateUrl: true, announce: "Starter layout applied." });
@@ -1242,6 +1316,37 @@ function buildLayerGraph(raw) {
   return { nodes, edges };
 }
 
+function buildCycleGraph(raw) {
+  const names = splitLines(raw);
+  if (names.length < 3) {
+    throw new Error("A cycle needs at least three steps.");
+  }
+  const nodes = names.map((name, index) => ({ id: makeUniqueId(name, names.slice(0, index).map(makeSafeId)), label: name }));
+  const edges = nodes.map((node, index) => ({
+    from: node.id,
+    to: nodes[(index + 1) % nodes.length].id
+  }));
+  return { nodes, edges };
+}
+
+function buildPipelineGraph() {
+  return {
+    nodes: [
+      { id: "Source", label: "Source" },
+      { id: "Build", label: "Build" },
+      { id: "Test", label: "Test" },
+      { id: "Release", label: "Release" },
+      { id: "Monitor", label: "Monitor" }
+    ],
+    edges: [
+      { from: "Source", to: "Build" },
+      { from: "Build", to: "Test" },
+      { from: "Test", to: "Release" },
+      { from: "Release", to: "Monitor" }
+    ]
+  };
+}
+
 function splitLines(raw) {
   return raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
@@ -1274,23 +1379,28 @@ function loadStateFromUrl() {
   }
 
   try {
-    const json = LZString.decompressFromEncodedURIComponent(raw);
-    if (!json) {
-      return null;
-    }
-    const parsed = JSON.parse(json);
-    validateGraph(parsed.graph);
-    return {
-      title: typeof parsed.title === "string" ? parsed.title : DEFAULT_STATE.title,
-      direction: typeof parsed.direction === "string" ? parsed.direction : DEFAULT_STATE.direction,
-      theme: typeof parsed.theme === "string" ? parsed.theme : DEFAULT_STATE.theme,
-      mode: parsed.mode === "expert" ? "expert" : "easy",
-      graph: parsed.graph
-    };
+    return decodeStateFromHash(`#${raw}`);
   } catch (error) {
     showStatus(`Could not load URL graph: ${error.message}`, "error");
     return null;
   }
+}
+
+function decodeStateFromHash(hash) {
+  const raw = hash.replace(/^#/, "");
+  const json = LZString.decompressFromEncodedURIComponent(raw);
+  if (!json) {
+    throw new Error("Could not decode graph data.");
+  }
+  const parsed = JSON.parse(json);
+  validateGraph(parsed.graph);
+  return {
+    title: typeof parsed.title === "string" ? parsed.title : DEFAULT_STATE.title,
+    direction: typeof parsed.direction === "string" ? parsed.direction : DEFAULT_STATE.direction,
+    theme: typeof parsed.theme === "string" ? parsed.theme : DEFAULT_STATE.theme,
+    mode: parsed.mode === "expert" ? "expert" : "easy",
+    graph: parsed.graph
+  };
 }
 
 function persistStateToUrl(nextState) {
@@ -1300,6 +1410,7 @@ function persistStateToUrl(nextState) {
   if (window.location.hash !== nextHash) {
     history.replaceState(null, "", nextHash);
   }
+  shareLinkInput.value = window.location.href;
 }
 
 function getSerializedSvg() {
@@ -1311,6 +1422,7 @@ function getSerializedSvg() {
   const theme = getThemeById(state.theme);
   clonedSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   clonedSvg.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+  addExportBackground(clonedSvg);
 
   const styleSheet = document.createElement("style");
   styleSheet.textContent = buildEmbeddedSvgStyles(theme);
@@ -1327,7 +1439,8 @@ function buildEmbeddedSvgStyles(theme) {
       nodeText: "#f8fafc",
       edge: "#64748b",
       label: "#cbd5e1",
-      title: "#e2e8f0"
+      title: "#e2e8f0",
+      bg: "#0f172a"
     },
     sunset: {
       nodeFill: "#3f1d2e",
@@ -1335,7 +1448,8 @@ function buildEmbeddedSvgStyles(theme) {
       nodeText: "#fff1f2",
       edge: "#fdba74",
       label: "#ffe4e6",
-      title: "#fff7ed"
+      title: "#fff7ed",
+      bg: "#31111d"
     },
     neon: {
       nodeFill: "#091a1d",
@@ -1343,7 +1457,8 @@ function buildEmbeddedSvgStyles(theme) {
       nodeText: "#ccfbf1",
       edge: "#67e8f9",
       label: "#a5f3fc",
-      title: "#ecfeff"
+      title: "#ecfeff",
+      bg: "#041f24"
     },
     paper: {
       nodeFill: "#f8fafc",
@@ -1351,14 +1466,34 @@ function buildEmbeddedSvgStyles(theme) {
       nodeText: "#0f172a",
       edge: "#475569",
       label: "#334155",
-      title: "#0f172a"
+      title: "#0f172a",
+      bg: "#e2e8f0"
+    },
+    forest: {
+      nodeFill: "#10261d",
+      nodeStroke: "#34d399",
+      nodeText: "#ecfdf5",
+      edge: "#6ee7b7",
+      label: "#d1fae5",
+      title: "#ecfdf5",
+      bg: "#08140f"
+    },
+    royal: {
+      nodeFill: "#1f1d4d",
+      nodeStroke: "#a78bfa",
+      nodeText: "#f5f3ff",
+      edge: "#c4b5fd",
+      label: "#ede9fe",
+      title: "#f5f3ff",
+      bg: "#161238"
     }
   };
 
   const palette = themeVars[theme.id] || themeVars.midnight;
 
   return `
-    svg { background: transparent; }
+    svg { background: ${palette.bg}; }
+    .export-background { fill: ${palette.bg}; }
     .graph-node rect {
       rx: 12px;
       ry: 12px;
@@ -1397,6 +1532,17 @@ function buildEmbeddedSvgStyles(theme) {
   `;
 }
 
+function addExportBackground(svgElement) {
+  const viewBox = graphSvg.viewBox.baseVal;
+  const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  background.setAttribute("class", "export-background");
+  background.setAttribute("x", "0");
+  background.setAttribute("y", "0");
+  background.setAttribute("width", String(viewBox.width));
+  background.setAttribute("height", String(viewBox.height));
+  svgElement.prepend(background);
+}
+
 async function svgToPngBlob(svgMarkup) {
   const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -1411,8 +1557,7 @@ async function svgToPngBlob(svgMarkup) {
 
     const context = canvas.getContext("2d");
     context.scale(scale, scale);
-    context.fillStyle = getComputedStyle(document.body).backgroundColor || "#0b1220";
-    context.fillRect(0, 0, viewBox.width, viewBox.height);
+    context.clearRect(0, 0, viewBox.width, viewBox.height);
     context.drawImage(image, 0, 0, viewBox.width, viewBox.height);
 
     return await new Promise((resolve, reject) => {
