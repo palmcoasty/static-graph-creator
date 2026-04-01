@@ -33,6 +33,7 @@ const DEFAULT_STATE = {
   title: "Email Platform Overview",
   direction: "LR",
   theme: "midnight",
+  mode: "easy",
   graph: {
     nodes: [
       { id: "BrowserClient", label: "BrowserClient" },
@@ -76,12 +77,31 @@ const graphInput = document.getElementById("graphInput");
 const directionSelect = document.getElementById("directionSelect");
 const titleInput = document.getElementById("titleInput");
 const themePicker = document.getElementById("themePicker");
+const easyModeButton = document.getElementById("easyModeButton");
+const expertModeButton = document.getElementById("expertModeButton");
+const modeHelpText = document.getElementById("modeHelpText");
+const easyEditorPanel = document.getElementById("easyEditorPanel");
+const expertEditorPanel = document.getElementById("expertEditorPanel");
+const patternTypeSelect = document.getElementById("patternTypeSelect");
+const patternCenterInput = document.getElementById("patternCenterInput");
+const patternInput = document.getElementById("patternInput");
+const nodeNameInput = document.getElementById("nodeNameInput");
+const addNodeButton = document.getElementById("addNodeButton");
+const edgeFromSelect = document.getElementById("edgeFromSelect");
+const edgeToSelect = document.getElementById("edgeToSelect");
+const edgeLabelInput = document.getElementById("edgeLabelInput");
+const addEdgeButton = document.getElementById("addEdgeButton");
+const easyNodeList = document.getElementById("easyNodeList");
+const easyEdgeList = document.getElementById("easyEdgeList");
+const easyNodeCount = document.getElementById("easyNodeCount");
+const easyEdgeCount = document.getElementById("easyEdgeCount");
 const previewTitle = document.getElementById("previewTitle");
 const themePill = document.getElementById("themePill");
 const nodeCountPill = document.getElementById("nodeCountPill");
 const edgeCountPill = document.getElementById("edgeCountPill");
 const statusMessage = document.getElementById("statusMessage");
 const graphSvg = document.getElementById("graphSvg");
+const resetLayoutButton = document.getElementById("resetLayoutButton");
 
 initialize();
 
@@ -98,7 +118,9 @@ function initialize() {
     if (!parsed) {
       return;
     }
+    state.graph = parsed;
     graphInput.value = JSON.stringify(parsed, null, 2);
+    syncEasyEditorFromGraph();
     showStatus("JSON formatted.", "success");
   });
 
@@ -162,6 +184,34 @@ function initialize() {
     renderGraphFromControls({ updateUrl: true, announce: "Reset to example graph." });
   });
 
+  resetLayoutButton.addEventListener("click", () => {
+    clearManualLayout();
+    syncStateToControls();
+    renderGraphFromControls({ updateUrl: true, announce: "Layout reset to automatic placement." });
+  });
+
+  easyModeButton.addEventListener("click", () => {
+    state.mode = "easy";
+    updateModeUi();
+    renderGraphFromControls({ updateUrl: true, announce: "Easy mode enabled." });
+  });
+
+  expertModeButton.addEventListener("click", () => {
+    state.mode = "expert";
+    updateModeUi();
+    renderGraphFromControls({ updateUrl: true, announce: "Expert mode enabled." });
+  });
+
+  document.getElementById("applyPatternButton").addEventListener("click", applyPatternBuilder);
+  addNodeButton.addEventListener("click", handleAddNode);
+  addEdgeButton.addEventListener("click", handleAddEdge);
+  nodeNameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleAddNode();
+    }
+  });
+
   graphInput.addEventListener("input", debounce(() => renderGraphFromControls({ updateUrl: true }), 350));
   directionSelect.addEventListener("change", () => renderGraphFromControls({ updateUrl: true }));
   titleInput.addEventListener("input", debounce(() => renderGraphFromControls({ updateUrl: true }), 250));
@@ -206,6 +256,8 @@ function syncStateToControls() {
   directionSelect.value = state.direction;
   titleInput.value = state.title;
   updateThemePickerSelection();
+  updateModeUi();
+  syncEasyEditorFromGraph();
 }
 
 function updateThemePickerSelection() {
@@ -224,6 +276,8 @@ function renderGraphFromControls(options = {}) {
   }
 
   Object.assign(state, nextState);
+  graphInput.value = JSON.stringify(state.graph, null, 2);
+  syncEasyEditorFromGraph();
   renderGraph(state);
 
   if (options.updateUrl) {
@@ -238,7 +292,7 @@ function renderGraphFromControls(options = {}) {
 }
 
 function buildStateFromControls() {
-  const parsedGraph = parseGraphInput();
+  const parsedGraph = state.mode === "expert" ? parseGraphInput() : structuredClone(state.graph);
   if (!parsedGraph) {
     return null;
   }
@@ -246,8 +300,9 @@ function buildStateFromControls() {
   const direction = directionSelect.value;
   const title = titleInput.value.trim() || "Untitled Graph";
   const theme = THEME_DEFINITIONS.some((item) => item.id === state.theme) ? state.theme : DEFAULT_STATE.theme;
+  const mode = state.mode === "expert" ? "expert" : "easy";
 
-  return { graph: parsedGraph, direction, title, theme };
+  return { graph: parsedGraph, direction, title, theme, mode };
 }
 
 function parseGraphInput() {
@@ -277,6 +332,11 @@ function validateGraph(graph) {
     }
     if (ids.has(node.id)) {
       throw new Error(`Duplicate node id: ${node.id}`);
+    }
+    if (node.position) {
+      if (typeof node.position.x !== "number" || typeof node.position.y !== "number") {
+        throw new Error(`Node ${node.id} has an invalid position.`);
+      }
     }
     ids.add(node.id);
   });
@@ -330,23 +390,26 @@ function renderGraph(currentState) {
   const renderer = new dagreD3.render();
   renderer(inner, graph);
 
-  const graphDimensions = graph.graph();
+  applySavedManualPositions(inner, currentState.graph);
+  enableNodeDragging(inner, currentState.graph);
+  updateManualEdges(inner, currentState.graph);
   const titleOffset = currentState.title ? 18 : 0;
 
   if (currentState.title) {
     inner
       .append("text")
       .attr("class", "graph-title")
-      .attr("x", graphDimensions.width / 2)
+      .attr("x", graph.graph().width / 2)
       .attr("y", -titleOffset)
       .attr("text-anchor", "middle")
       .text(currentState.title);
   }
 
-  inner.attr("transform", `translate(24, ${currentState.title ? 48 : 24})`);
-  svgSelection.attr("width", graphDimensions.width + 48);
-  svgSelection.attr("height", graphDimensions.height + (currentState.title ? 96 : 48));
-  svgSelection.attr("viewBox", `0 0 ${graphDimensions.width + 48} ${graphDimensions.height + (currentState.title ? 96 : 48)}`);
+  const graphDimensions = measureGraphBounds(inner, currentState.title);
+  inner.attr("transform", `translate(${graphDimensions.offsetX}, ${graphDimensions.offsetY})`);
+  svgSelection.attr("width", graphDimensions.width);
+  svgSelection.attr("height", graphDimensions.height);
+  svgSelection.attr("viewBox", `0 0 ${graphDimensions.width} ${graphDimensions.height}`);
 
   previewTitle.textContent = currentState.title;
   nodeCountPill.textContent = `${currentState.graph.nodes.length} nodes`;
@@ -356,6 +419,534 @@ function renderGraph(currentState) {
 
 function getThemeById(themeId) {
   return THEME_DEFINITIONS.find((theme) => theme.id === themeId) || THEME_DEFINITIONS[0];
+}
+
+function clearManualLayout() {
+  state.graph.nodes.forEach((node) => {
+    delete node.position;
+  });
+}
+
+function applySavedManualPositions(inner, graphData) {
+  inner.selectAll("g.node").each(function(nodeId) {
+    const node = graphData.nodes.find((item) => item.id === nodeId);
+    if (!node || !node.position) {
+      return;
+    }
+
+    const selection = d3.select(this);
+    selection.attr("transform", `translate(${node.position.x},${node.position.y})`);
+  });
+}
+
+function enableNodeDragging(inner, graphData) {
+  const nodesById = new Map(graphData.nodes.map((node) => [node.id, node]));
+
+  inner.selectAll("g.node").call(
+    d3.drag()
+      .on("start", function() {
+        d3.select(this).classed("is-dragging", true);
+      })
+      .on("drag", function(event, nodeId) {
+        const node = nodesById.get(nodeId);
+        if (!node) {
+          return;
+        }
+
+        const current = getNodeTransform(d3.select(this));
+        const nextX = current.x + event.dx;
+        const nextY = current.y + event.dy;
+        node.position = { x: nextX, y: nextY };
+        d3.select(this).attr("transform", `translate(${nextX},${nextY})`);
+        updateManualEdges(inner, graphData);
+      })
+      .on("end", function(event, nodeId) {
+        d3.select(this).classed("is-dragging", false);
+        const node = nodesById.get(nodeId);
+        if (node) {
+          persistGraphState();
+        }
+      })
+  );
+}
+
+function updateManualEdges(inner, graphData) {
+  const boxes = new Map();
+
+  inner.selectAll("g.node").each(function(nodeId) {
+    const selection = d3.select(this);
+    const transform = getNodeTransform(selection);
+    const rect = this.querySelector("rect");
+
+    if (!rect) {
+      return;
+    }
+
+    const width = Number(rect.getAttribute("width"));
+    const height = Number(rect.getAttribute("height"));
+
+    boxes.set(nodeId, {
+      x: transform.x,
+      y: transform.y,
+      width,
+      height
+    });
+  });
+
+  inner.selectAll("g.edgePath").each(function(edgeInfo) {
+    const fromBox = boxes.get(edgeInfo.v);
+    const toBox = boxes.get(edgeInfo.w);
+
+    if (!fromBox || !toBox) {
+      return;
+    }
+
+    const points = computeEdgePoints(fromBox, toBox);
+    const path = d3.select(this).select("path");
+    path.attr("d", buildEdgePath(points));
+  });
+
+  inner.selectAll("g.edgeLabel").each(function(edgeInfo) {
+    const fromBox = boxes.get(edgeInfo.v);
+    const toBox = boxes.get(edgeInfo.w);
+
+    if (!fromBox || !toBox) {
+      return;
+    }
+
+    const midX = (fromBox.x + fromBox.width / 2 + toBox.x + toBox.width / 2) / 2;
+    const midY = (fromBox.y + fromBox.height / 2 + toBox.y + toBox.height / 2) / 2;
+    d3.select(this).attr("transform", `translate(${midX},${midY})`);
+  });
+}
+
+function computeEdgePoints(fromBox, toBox) {
+  const fromCenter = {
+    x: fromBox.x + fromBox.width / 2,
+    y: fromBox.y + fromBox.height / 2
+  };
+  const toCenter = {
+    x: toBox.x + toBox.width / 2,
+    y: toBox.y + toBox.height / 2
+  };
+  const deltaX = toCenter.x - fromCenter.x;
+  const deltaY = toCenter.y - fromCenter.y;
+
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    return [
+      {
+        x: fromCenter.x + (deltaX >= 0 ? fromBox.width / 2 : -fromBox.width / 2),
+        y: fromCenter.y
+      },
+      {
+        x: toCenter.x + (deltaX >= 0 ? -toBox.width / 2 : toBox.width / 2),
+        y: toCenter.y
+      }
+    ];
+  }
+
+  return [
+    {
+      x: fromCenter.x,
+      y: fromCenter.y + (deltaY >= 0 ? fromBox.height / 2 : -fromBox.height / 2)
+    },
+    {
+      x: toCenter.x,
+      y: toCenter.y + (deltaY >= 0 ? -toBox.height / 2 : toBox.height / 2)
+    }
+  ];
+}
+
+function buildEdgePath(points) {
+  const [start, end] = points;
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
+  return `M ${start.x} ${start.y} Q ${midX} ${midY} ${end.x} ${end.y}`;
+}
+
+function getNodeTransform(selection) {
+  const transform = selection.attr("transform") || "translate(0,0)";
+  const match = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(transform);
+
+  return {
+    x: match ? Number(match[1]) : 0,
+    y: match ? Number(match[2]) : 0
+  };
+}
+
+function measureGraphBounds(inner, hasTitle) {
+  const bounds = inner.node().getBBox();
+  const padding = 32;
+  const titlePad = hasTitle ? 32 : 0;
+  const offsetX = padding - bounds.x;
+  const offsetY = padding + titlePad - bounds.y;
+
+  return {
+    offsetX,
+    offsetY,
+    width: Math.max(320, Math.ceil(bounds.width + padding * 2)),
+    height: Math.max(240, Math.ceil(bounds.height + padding * 2 + titlePad))
+  };
+}
+
+function persistGraphState() {
+  graphInput.value = JSON.stringify(state.graph, null, 2);
+  syncEasyEditorFromGraph();
+  persistStateToUrl(state);
+}
+
+function updateModeUi() {
+  const isEasy = state.mode !== "expert";
+  easyModeButton.classList.toggle("active", isEasy);
+  expertModeButton.classList.toggle("active", !isEasy);
+  easyModeButton.setAttribute("aria-selected", String(isEasy));
+  expertModeButton.setAttribute("aria-selected", String(!isEasy));
+  easyEditorPanel.classList.toggle("hidden-panel", !isEasy);
+  expertEditorPanel.classList.toggle("hidden-panel", isEasy);
+  modeHelpText.textContent = isEasy
+    ? "Easy mode uses forms and quick builders so people can create graphs without touching JSON."
+    : "Expert mode gives direct control over the JSON model for precise editing.";
+}
+
+function syncEasyEditorFromGraph() {
+  const graph = state.graph;
+  easyNodeCount.textContent = String(graph.nodes.length);
+  easyEdgeCount.textContent = String(graph.edges.length);
+  renderNodeList(graph.nodes);
+  renderEdgeList(graph.edges, graph.nodes);
+  populateNodeSelects(graph.nodes);
+}
+
+function renderNodeList(nodes) {
+  easyNodeList.innerHTML = "";
+
+  if (!nodes.length) {
+    easyNodeList.innerHTML = '<div class="empty-state">No nodes yet. Add a node or generate one from a pattern.</div>';
+    return;
+  }
+
+  nodes.forEach((node) => {
+    const card = document.createElement("div");
+    card.className = "item-card";
+
+    const header = document.createElement("div");
+    header.className = "item-card-header";
+
+    const title = document.createElement("div");
+    title.className = "item-card-title";
+    title.textContent = node.label || node.id;
+
+    const actions = document.createElement("div");
+    actions.className = "item-card-actions";
+
+    const renameButton = document.createElement("button");
+    renameButton.type = "button";
+    renameButton.className = "muted-button";
+    renameButton.textContent = "Rename";
+    renameButton.addEventListener("click", () => renameNode(node.id));
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger-button";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => deleteNode(node.id));
+
+    actions.append(renameButton, deleteButton);
+    header.append(title, actions);
+
+    const meta = document.createElement("div");
+    meta.className = "theme-description";
+    meta.textContent = `ID: ${node.id}`;
+
+    card.append(header, meta);
+    easyNodeList.appendChild(card);
+  });
+}
+
+function renderEdgeList(edges, nodes) {
+  easyEdgeList.innerHTML = "";
+
+  if (!edges.length) {
+    easyEdgeList.innerHTML = '<div class="empty-state">No connections yet. Use the connection form to link nodes.</div>';
+    return;
+  }
+
+  const labelMap = new Map(nodes.map((node) => [node.id, node.label || node.id]));
+
+  edges.forEach((edge, index) => {
+    const card = document.createElement("div");
+    card.className = "item-card";
+
+    const header = document.createElement("div");
+    header.className = "item-card-header";
+
+    const title = document.createElement("div");
+    title.className = "item-card-title";
+    title.textContent = `${labelMap.get(edge.from) || edge.from} -> ${labelMap.get(edge.to) || edge.to}`;
+
+    const actions = document.createElement("div");
+    actions.className = "item-card-actions";
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger-button";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => deleteEdge(index));
+
+    actions.append(deleteButton);
+    header.append(title, actions);
+
+    const meta = document.createElement("div");
+    meta.className = "theme-description";
+    meta.textContent = edge.label ? `Label: ${edge.label}` : "No label";
+
+    card.append(header, meta);
+    easyEdgeList.appendChild(card);
+  });
+}
+
+function populateNodeSelects(nodes) {
+  const currentFrom = edgeFromSelect.value;
+  const currentTo = edgeToSelect.value;
+
+  edgeFromSelect.innerHTML = "";
+  edgeToSelect.innerHTML = "";
+
+  if (!nodes.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Add nodes first";
+    edgeFromSelect.appendChild(option.cloneNode(true));
+    edgeToSelect.appendChild(option);
+    return;
+  }
+
+  nodes.forEach((node) => {
+    const label = node.label || node.id;
+    const fromOption = document.createElement("option");
+    fromOption.value = node.id;
+    fromOption.textContent = label;
+
+    const toOption = document.createElement("option");
+    toOption.value = node.id;
+    toOption.textContent = label;
+
+    edgeFromSelect.appendChild(fromOption);
+    edgeToSelect.appendChild(toOption);
+  });
+
+  edgeFromSelect.value = nodes.some((node) => node.id === currentFrom) ? currentFrom : nodes[0].id;
+  edgeToSelect.value = nodes.some((node) => node.id === currentTo) ? currentTo : nodes[Math.min(1, nodes.length - 1)].id;
+}
+
+function handleAddNode() {
+  const name = nodeNameInput.value.trim();
+  if (!name) {
+    showStatus("Enter a node name first.", "error");
+    return;
+  }
+
+  const id = makeUniqueId(name, state.graph.nodes.map((node) => node.id));
+  state.graph.nodes.push({ id, label: name });
+  nodeNameInput.value = "";
+  syncStateToControls();
+  renderGraphFromControls({ updateUrl: true, announce: `Added node ${name}.` });
+}
+
+function handleAddEdge() {
+  const from = edgeFromSelect.value;
+  const to = edgeToSelect.value;
+  const label = edgeLabelInput.value.trim();
+
+  if (!from || !to) {
+    showStatus("Choose both connection endpoints.", "error");
+    return;
+  }
+
+  const alreadyExists = state.graph.edges.some((edge) => edge.from === from && edge.to === to && (edge.label || "") === label);
+  if (alreadyExists) {
+    showStatus("That connection already exists.", "error");
+    return;
+  }
+
+  const edge = { from, to };
+  if (label) {
+    edge.label = label;
+  }
+  state.graph.edges.push(edge);
+  edgeLabelInput.value = "";
+  syncStateToControls();
+  renderGraphFromControls({ updateUrl: true, announce: "Connection added." });
+}
+
+function renameNode(nodeId) {
+  const node = state.graph.nodes.find((item) => item.id === nodeId);
+  if (!node) {
+    return;
+  }
+
+  const nextLabel = window.prompt("Rename node", node.label || node.id);
+  if (!nextLabel) {
+    return;
+  }
+
+  node.label = nextLabel.trim();
+  if (!node.label) {
+    node.label = node.id;
+  }
+  syncStateToControls();
+  renderGraphFromControls({ updateUrl: true, announce: "Node renamed." });
+}
+
+function deleteNode(nodeId) {
+  const node = state.graph.nodes.find((item) => item.id === nodeId);
+  if (!node) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete ${node.label || node.id} and its connections?`);
+  if (!confirmed) {
+    return;
+  }
+
+  state.graph.nodes = state.graph.nodes.filter((item) => item.id !== nodeId);
+  state.graph.edges = state.graph.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
+  syncStateToControls();
+  renderGraphFromControls({ updateUrl: true, announce: "Node deleted." });
+}
+
+function deleteEdge(index) {
+  state.graph.edges.splice(index, 1);
+  syncStateToControls();
+  renderGraphFromControls({ updateUrl: true, announce: "Connection deleted." });
+}
+
+function applyPatternBuilder() {
+  const raw = patternInput.value.trim();
+  const patternType = patternTypeSelect.value;
+
+  if (!raw) {
+    showStatus("Add some names first for the pattern builder.", "error");
+    return;
+  }
+
+  let graph;
+  try {
+    if (patternType === "chain") {
+      graph = buildChainGraph(raw);
+    } else if (patternType === "hub") {
+      graph = buildHubGraph(patternCenterInput.value.trim(), raw);
+    } else {
+      graph = buildLayerGraph(raw);
+    }
+  } catch (error) {
+    showStatus(error.message, "error");
+    return;
+  }
+
+  state.graph = graph;
+  syncStateToControls();
+  renderGraphFromControls({ updateUrl: true, announce: "Pattern applied." });
+}
+
+function buildChainGraph(raw) {
+  const names = splitLines(raw);
+  if (names.length < 2) {
+    throw new Error("A chain needs at least two names.");
+  }
+
+  const nodes = names.map((name, index) => ({ id: makeUniqueId(name, names.slice(0, index).map(makeSafeId)), label: name }));
+  const edges = [];
+
+  for (let index = 0; index < nodes.length - 1; index += 1) {
+    edges.push({ from: nodes[index].id, to: nodes[index + 1].id });
+  }
+
+  return { nodes, edges };
+}
+
+function buildHubGraph(centerName, raw) {
+  const spokes = splitLines(raw);
+  if (!centerName) {
+    throw new Error("Hub and spoke needs a main node.");
+  }
+  if (!spokes.length) {
+    throw new Error("Add at least one spoke.");
+  }
+
+  const allIds = [];
+  const centerId = makeUniqueId(centerName, allIds);
+  allIds.push(centerId);
+  const nodes = [{ id: centerId, label: centerName }];
+  const edges = [];
+
+  spokes.forEach((name) => {
+    const spokeId = makeUniqueId(name, allIds);
+    allIds.push(spokeId);
+    nodes.push({ id: spokeId, label: name });
+    edges.push({ from: centerId, to: spokeId });
+  });
+
+  return { nodes, edges };
+}
+
+function buildLayerGraph(raw) {
+  const layerLines = splitLines(raw);
+  if (layerLines.length < 2) {
+    throw new Error("Layered flow needs at least two lines.");
+  }
+
+  const allIds = [];
+  const layers = layerLines.map((line) => {
+    const names = line.split(",").map((part) => part.trim()).filter(Boolean);
+    if (!names.length) {
+      throw new Error("Each layer line must contain at least one node name.");
+    }
+
+    return names.map((name) => {
+      const id = makeUniqueId(name, allIds);
+      allIds.push(id);
+      return { id, label: name };
+    });
+  });
+
+  const nodes = layers.flat();
+  const edges = [];
+
+  for (let index = 0; index < layers.length - 1; index += 1) {
+    layers[index].forEach((fromNode) => {
+      layers[index + 1].forEach((toNode) => {
+        edges.push({ from: fromNode.id, to: toNode.id });
+      });
+    });
+  }
+
+  return { nodes, edges };
+}
+
+function splitLines(raw) {
+  return raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function makeSafeId(value) {
+  return value
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "node";
+}
+
+function makeUniqueId(value, existingIds) {
+  const existing = new Set(existingIds);
+  const baseId = makeSafeId(value);
+  let candidate = baseId;
+  let suffix = 2;
+
+  while (existing.has(candidate)) {
+    candidate = `${baseId}_${suffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
 }
 
 function loadStateFromUrl() {
@@ -375,6 +966,7 @@ function loadStateFromUrl() {
       title: typeof parsed.title === "string" ? parsed.title : DEFAULT_STATE.title,
       direction: typeof parsed.direction === "string" ? parsed.direction : DEFAULT_STATE.direction,
       theme: typeof parsed.theme === "string" ? parsed.theme : DEFAULT_STATE.theme,
+      mode: parsed.mode === "expert" ? "expert" : "easy",
       graph: parsed.graph
     };
   } catch (error) {
