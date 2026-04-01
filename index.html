@@ -23,6 +23,94 @@
 
       <section class="panel">
         <div class="panel-header">
+          <h2>Editing Mode</h2>
+        </div>
+        <div class="mode-switch" role="tablist" aria-label="Editing mode">
+          <button id="easyModeButton" class="mode-button active" type="button" role="tab" aria-selected="true">Easy</button>
+          <button id="expertModeButton" class="mode-button ghost-button" type="button" role="tab" aria-selected="false">Expert</button>
+        </div>
+        <p id="modeHelpText" class="panel-copy">Easy mode uses forms and quick builders so people can create graphs without touching JSON.</p>
+      </section>
+
+      <section id="easyEditorPanel" class="panel">
+        <div class="panel-header">
+          <h2>Easy Builder</h2>
+        </div>
+        <p class="panel-copy">Add boxes, connect them, or generate a graph from a simple pattern.</p>
+
+        <div class="subpanel">
+          <h3>Quick Start Patterns</h3>
+          <div class="field-grid">
+            <label class="field">
+              <span>Pattern Type</span>
+              <select id="patternTypeSelect">
+                <option value="chain">Chain</option>
+                <option value="hub">Hub and Spoke</option>
+                <option value="layers">Layered Flow</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Main Node</span>
+              <input id="patternCenterInput" type="text" placeholder="Used for hub pattern">
+            </label>
+            <label class="field">
+              <span>Names</span>
+              <textarea id="patternInput" class="compact-textarea" spellcheck="false" placeholder="Chain: one name per line&#10;Hub: one spoke per line&#10;Layers: one layer per line, comma-separated"></textarea>
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="applyPatternButton" type="button">Build From Pattern</button>
+          </div>
+        </div>
+
+        <div class="subpanel">
+          <h3>Add Node</h3>
+          <div class="inline-form">
+            <input id="nodeNameInput" type="text" placeholder="Node name">
+            <button id="addNodeButton" type="button">Add Node</button>
+          </div>
+        </div>
+
+        <div class="subpanel">
+          <h3>Add Connection</h3>
+          <div class="field-grid">
+            <label class="field">
+              <span>From</span>
+              <select id="edgeFromSelect"></select>
+            </label>
+            <label class="field">
+              <span>To</span>
+              <select id="edgeToSelect"></select>
+            </label>
+            <label class="field">
+              <span>Label</span>
+              <input id="edgeLabelInput" type="text" placeholder="Optional">
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="addEdgeButton" type="button">Add Connection</button>
+          </div>
+        </div>
+
+        <div class="subpanel">
+          <div class="panel-header">
+            <h3>Nodes</h3>
+            <span id="easyNodeCount" class="mini-count">0</span>
+          </div>
+          <div id="easyNodeList" class="item-list"></div>
+        </div>
+
+        <div class="subpanel">
+          <div class="panel-header">
+            <h3>Connections</h3>
+            <span id="easyEdgeCount" class="mini-count">0</span>
+          </div>
+          <div id="easyEdgeList" class="item-list"></div>
+        </div>
+      </section>
+
+      <section id="expertEditorPanel" class="panel hidden-panel">
+        <div class="panel-header">
           <h2>Graph Data</h2>
           <button id="formatJsonButton" class="ghost-button" type="button">Format JSON</button>
         </div>
@@ -63,6 +151,7 @@
         <div class="panel-header">
           <h2>Share & Export</h2>
         </div>
+        <p class="panel-copy">Drag nodes in the preview to create a custom layout. The exact positions are saved in the share link.</p>
         <div class="button-row">
           <button id="updateUrlButton" type="button">Update URL</button>
           <button id="copyLinkButton" type="button">Copy Share Link</button>
@@ -73,6 +162,7 @@
           <button id="exportPngButton" type="button">Export PNG</button>
         </div>
         <div class="button-row">
+          <button id="resetLayoutButton" class="ghost-button" type="button">Reset Layout</button>
           <button id="resetButton" class="ghost-button" type="button">Reset Example</button>
         </div>
         <p id="statusMessage" class="status-message" aria-live="polite"></p>
